@@ -1,4 +1,4 @@
-//go:build !darwin && !linux && (!windows || !cgo)
+//go:build !darwin && !linux && !freebsd && (!windows || !cgo)
 
 package ingress
 

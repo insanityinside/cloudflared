@@ -1,8 +1,8 @@
-//go:build darwin || linux
+//go:build darwin || linux || freebsd
 
 package ingress
 
-// This file extracts logic shared by Linux and Darwin implementation if ICMPProxy.
+// This file extracts logic shared by Darwin, Linux, and FreeBSD implementations of ICMPProxy.
 
 import (
 	"fmt"
@@ -17,21 +17,47 @@ import (
 	"github.com/cloudflare/cloudflared/packet"
 )
 
-// Opens a non-privileged ICMP socket on Linux and Darwin
+// newICMPConn opens an ICMP socket on the given IP.
+// On Darwin and Linux a non-privileged datagram socket (udp4/udp6) is used.
+// On FreeBSD a privileged raw socket (ip4:icmp / ip6:ipv6-icmp) is used.
 func newICMPConn(listenIP netip.Addr) (*icmp.PacketConn, error) {
 	if listenIP.Is4() {
+		if icmpUsesRawSocket {
+			return icmp.ListenPacket("ip4:icmp", listenIP.String())
+		}
 		return icmp.ListenPacket("udp4", listenIP.String())
+	}
+	if icmpUsesRawSocket {
+		return icmp.ListenPacket("ip6:ipv6-icmp", listenIP.String())
 	}
 	return icmp.ListenPacket("udp6", listenIP.String())
 }
 
 func netipAddr(addr net.Addr) (netip.Addr, bool) {
-	udpAddr, ok := addr.(*net.UDPAddr)
-	if !ok {
+	switch a := addr.(type) {
+	case *net.UDPAddr:
+		// datagram socket (Darwin, Linux)
+		return a.AddrPort().Addr(), true
+	case *net.IPAddr:
+		// raw socket (FreeBSD); IPv4 raw reads also come through handleFullPacket,
+		// but IPv6 raw reads return *net.IPAddr peers and use this path.
+		ip, ok := netip.AddrFromSlice(a.IP)
+		if !ok {
+			return netip.Addr{}, false
+		}
+		return ip.Unmap(), true
+	default:
 		return netip.Addr{}, false
 	}
+}
 
-	return udpAddr.AddrPort().Addr(), true
+// icmpDstAddr returns the correct net.Addr type to pass to icmp.PacketConn.WriteTo.
+// Raw sockets require *net.IPAddr; datagram sockets require *net.UDPAddr.
+func icmpDstAddr(dst netip.Addr) net.Addr {
+	if icmpUsesRawSocket {
+		return &net.IPAddr{IP: dst.AsSlice()}
+	}
+	return &net.UDPAddr{IP: dst.AsSlice()}
 }
 
 type flow3Tuple struct {
@@ -113,9 +139,7 @@ func (ief *icmpEchoFlow) sendToDst(dst netip.Addr, msg *icmp.Message) error {
 	if err != nil {
 		return err
 	}
-	_, err = ief.originConn.WriteTo(serializedPacket, &net.UDPAddr{
-		IP: dst.AsSlice(),
-	})
+	_, err = ief.originConn.WriteTo(serializedPacket, icmpDstAddr(dst))
 	return err
 }
 
