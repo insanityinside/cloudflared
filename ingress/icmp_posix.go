@@ -1,8 +1,8 @@
-//go:build darwin || linux || freebsd
+//go:build darwin || linux || freebsd || openbsd
 
 package ingress
 
-// This file extracts logic shared by Darwin, Linux, and FreeBSD implementations of ICMPProxy.
+// This file extracts logic shared by Darwin, Linux, FreeBSD, and OpenBSD implementations of ICMPProxy.
 
 import (
 	"errors"
