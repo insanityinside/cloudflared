@@ -1,11 +1,11 @@
-//go:build darwin
+//go:build darwin || freebsd
 
 package ingress
 
-// This file implements ICMPProxy for Darwin. It uses a non-privileged ICMP socket to send echo requests and listen for
-// echo replies. The source IP of the requests are rewritten to the bind IP of the socket and the socket reads all
-// messages, so we use echo ID to distinguish the replies. Each (source IP, destination IP, echo ID) is assigned a
-// unique echo ID.
+// This file implements ICMPProxy for Darwin and FreeBSD using a single shared ICMP socket. The source IP of the
+// requests are rewritten to the bind IP of the socket and the socket reads all messages, so we use echo ID to
+// distinguish the replies. Each (source IP, destination IP, echo ID) is assigned a unique echo ID.
+// On Darwin the socket is a non-privileged datagram socket; on FreeBSD it is a privileged raw socket (root required).
 
 import (
 	"context"
@@ -113,6 +113,9 @@ func (snf echoFunnelID) String() string {
 }
 
 func newICMPProxy(listenIP netip.Addr, logger *zerolog.Logger, idleTimeout time.Duration) (*icmpProxy, error) {
+	if err := checkICMPProxyPermission(listenIP, logger); err != nil {
+		return nil, err
+	}
 	conn, err := newICMPConn(listenIP)
 	if err != nil {
 		return nil, err
