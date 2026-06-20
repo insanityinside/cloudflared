@@ -231,6 +231,8 @@ func (ip *icmpProxy) Serve(ctx context.Context) error {
 			}
 			continue
 		}
+		// parseReply guarantees the body is *icmp.Echo, but the message Type could
+		// still be EchoRequest (not EchoReply) — isEchoReply checks the Type field.
 		if !isEchoReply(reply.msg) {
 			ip.logger.Debug().Str("dst", from.String()).Msgf("Drop ICMP %s from reply", reply.msg.Type)
 			continue
@@ -256,7 +258,7 @@ func (ip *icmpProxy) handleFullPacket(ctx context.Context, decoder *packet.ICMPD
 		msg:  icmpPacket.Message,
 		echo: echo,
 	}
-	if ip.sendReply(ctx, &reply); err != nil {
+	if err := ip.sendReply(ctx, &reply); err != nil {
 		return err
 	}
 	return nil
