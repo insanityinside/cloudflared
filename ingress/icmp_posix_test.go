@@ -1,10 +1,12 @@
-//go:build darwin || linux
+//go:build darwin || linux || freebsd
 
 package ingress
 
 import (
 	"context"
+	"net"
 	"os"
+	"syscall"
 	"testing"
 	"time"
 
@@ -19,6 +21,9 @@ import (
 )
 
 func TestFunnelIdleTimeout(t *testing.T) {
+	if icmpUsesRawSocket && syscall.Getuid() != 0 {
+		t.Skip("raw ICMP socket requires root")
+	}
 	defer leaktest.Check(t)()
 
 	const (
@@ -77,6 +82,9 @@ func TestFunnelIdleTimeout(t *testing.T) {
 }
 
 func TestReuseFunnel(t *testing.T) {
+	if icmpUsesRawSocket && syscall.Getuid() != 0 {
+		t.Skip("raw ICMP socket requires root")
+	}
 	defer leaktest.Check(t)()
 
 	const (
@@ -137,3 +145,58 @@ func TestReuseFunnel(t *testing.T) {
 	cancel()
 	<-proxyDone
 }
+
+// TestNetipAddr validates that netipAddr correctly handles both *net.UDPAddr
+// (datagram sockets used on Darwin/Linux) and *net.IPAddr (raw sockets used on
+// FreeBSD), as well as returning false for unrecognised types.
+func TestNetipAddr(t *testing.T) {
+	ipv4Raw := net.IP{1, 2, 3, 4}
+	ipv6Raw := net.ParseIP("2001:db8::1")
+
+	tests := []struct {
+		name    string
+		addr    net.Addr
+		wantOK  bool
+		wantStr string
+	}{
+		{
+			name:    "UDPAddr IPv4",
+			addr:    &net.UDPAddr{IP: ipv4Raw},
+			wantOK:  true,
+			wantStr: "1.2.3.4",
+		},
+		{
+			name:    "UDPAddr IPv6",
+			addr:    &net.UDPAddr{IP: ipv6Raw},
+			wantOK:  true,
+			wantStr: "2001:db8::1",
+		},
+		{
+			name:    "IPAddr IPv4",
+			addr:    &net.IPAddr{IP: ipv4Raw},
+			wantOK:  true,
+			wantStr: "1.2.3.4",
+		},
+		{
+			name:    "IPAddr IPv6",
+			addr:    &net.IPAddr{IP: ipv6Raw},
+			wantOK:  true,
+			wantStr: "2001:db8::1",
+		},
+		{
+			name:   "unsupported type",
+			addr:   &net.TCPAddr{IP: ipv4Raw},
+			wantOK: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := netipAddr(tt.addr)
+			require.Equal(t, tt.wantOK, ok)
+			if ok {
+				require.Equal(t, tt.wantStr, got.String())
+			}
+		})
+	}
+}
+
