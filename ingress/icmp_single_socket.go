@@ -1,11 +1,11 @@
-//go:build darwin || freebsd
+//go:build darwin || freebsd || openbsd
 
 package ingress
 
-// This file implements ICMPProxy for Darwin and FreeBSD using a single shared ICMP socket. The source IP of the
-// requests are rewritten to the bind IP of the socket and the socket reads all messages, so we use echo ID to
+// This file implements ICMPProxy for Darwin, FreeBSD, and OpenBSD using a single shared ICMP socket. The source IP of
+// the requests are rewritten to the bind IP of the socket and the socket reads all messages, so we use echo ID to
 // distinguish the replies. Each (source IP, destination IP, echo ID) is assigned a unique echo ID.
-// On Darwin the socket is a non-privileged datagram socket; on FreeBSD it is a privileged raw socket (root required).
+// On Darwin the socket is a non-privileged datagram socket; on FreeBSD and OpenBSD it is a privileged raw socket (root required).
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-//go:build freebsd
+//go:build freebsd || openbsd
 
 package diagnostic
 
@@ -103,10 +103,12 @@ func collectMemoryInformation(ctx context.Context) (*MemoryInformation, string, 
 }
 
 func collectFileDescriptorInformation(ctx context.Context) (*FileDescriptorInformation, string, error) {
-	const (
-		fileDescriptorMaximumKey = "kern.maxfiles"
-		fileDescriptorCurrentKey = "kern.openfiles"
-	)
+	const fileDescriptorMaximumKey = "kern.maxfiles"
+	// FreeBSD tracks open files in kern.openfiles; OpenBSD uses kern.nfiles.
+	fileDescriptorCurrentKey := "kern.openfiles"
+	if runtime.GOOS == "openbsd" {
+		fileDescriptorCurrentKey = "kern.nfiles"
+	}
 
 	command := exec.CommandContext(ctx, "sysctl", fileDescriptorMaximumKey, fileDescriptorCurrentKey)
 	stdout, err := command.Output()
