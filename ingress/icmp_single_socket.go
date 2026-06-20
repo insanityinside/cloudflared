@@ -9,6 +9,7 @@ package ingress
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/netip"
@@ -215,9 +216,16 @@ func (ip *icmpProxy) Serve(ctx context.Context) error {
 		}
 		reply, err := parseReply(from, buf[:n])
 		if err != nil {
-			ip.logger.Debug().Err(err).Str("dst", from.String()).Msg("Failed to parse ICMP reply, continue to parse as full packet")
+			if errors.Is(err, errNotEchoReply) {
+				// Valid ICMP but not an echo reply (e.g. NDP neighbor advertisements
+				// on a FreeBSD raw IPv6 socket). Not tunnel traffic — discard silently.
+				continue
+			}
+			// icmp.ParseMessage failed outright. On some platforms a raw IPv4 socket
+			// returns the full IP header + ICMP payload; try to decode it that way.
 			// In unit test, we found out when the listener listens on 0.0.0.0, the socket reads the full packet after
 			// the second reply
+			ip.logger.Debug().Err(err).Str("dst", from.String()).Msg("Failed to parse ICMP reply, continue to parse as full packet")
 			if err := ip.handleFullPacket(ctx, icmpDecoder, buf[:n]); err != nil {
 				ip.logger.Debug().Err(err).Str("dst", from.String()).Msg("Failed to parse ICMP reply as full packet")
 			}

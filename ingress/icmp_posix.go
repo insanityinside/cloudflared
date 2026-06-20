@@ -5,6 +5,7 @@ package ingress
 // This file extracts logic shared by Darwin, Linux, and FreeBSD implementations of ICMPProxy.
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -166,6 +167,12 @@ type echoReply struct {
 	echo *icmp.Echo
 }
 
+// errNotEchoReply is returned by parseReply when the ICMP message is valid but
+// not an echo reply (e.g. NDP neighbor advertisements received on a FreeBSD raw
+// IPv6 socket). Callers that want to fall back to handleFullPacket should only
+// do so when this sentinel is NOT set — i.e. when icmp.ParseMessage itself failed.
+var errNotEchoReply = errors.New("not an ICMP echo reply")
+
 func parseReply(from net.Addr, rawMsg []byte) (*echoReply, error) {
 	fromAddr, ok := netipAddr(from)
 	if !ok {
@@ -181,7 +188,8 @@ func parseReply(from net.Addr, rawMsg []byte) (*echoReply, error) {
 	}
 	echo, err := getICMPEcho(msg)
 	if err != nil {
-		return nil, err
+		// ICMP parsed OK but is not an echo (e.g. NDP on a raw IPv6 socket).
+		return nil, fmt.Errorf("%w: %w", errNotEchoReply, err)
 	}
 	return &echoReply{
 		from: fromAddr,
